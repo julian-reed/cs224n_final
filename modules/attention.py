@@ -1,4 +1,5 @@
 import torch
+import math
 
 from einops import rearrange
 from torch import nn
@@ -32,9 +33,12 @@ class CausalSelfAttention(nn.Module):
     return proj
 
   def attention(self, key, query, value, attention_mask):
-
-    ### YOUR CODE HERE
-    raise NotImplementedError
+    multihead = torch.tensor(key.shape, dtype=float)
+    for i in range(key.shape[1]):
+      head_i = (torch.nn.Softmax((query[:, i, :, :] @ torch.transpose(key, 2, 3)[:, i, :, :]) / math.sqrt(key.shape[2])) + attention_mask.repeat(1, 1, attention_mask.shape[3], 1)) @ value[:, i, :, :]
+      multihead[:, i, :, :] = head_i
+    multihead = torch.flatten(torch.transpose(multihead, 1, 2), start_dim = 2, end_dim = 3)
+    return multihead
 
 
   def forward(self, hidden_states, attention_mask):
