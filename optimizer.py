@@ -87,8 +87,8 @@ class AdamW(Optimizer):
                 v_t_hat = v_t / (1 - b2t) 
 
 
-                step = lr * m_t_hat / (v_t_hat.sqrt() + episilon)
-                p.data = p.data - step
+                lr_t = lr * m_t_hat / (v_t_hat.sqrt() + episilon)
+                p.data = p.data - lr_t
 
                 p.data = p.data * (1 - lr * decay_w)
 
