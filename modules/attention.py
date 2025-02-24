@@ -32,9 +32,9 @@ class CausalSelfAttention(nn.Module):
     return proj
 
   def attention(self, key, query, value, attention_mask):
-    attention_score = torch.matmul(query, torch.transpose(key, 2, 3)) / math.sqrt(key.shape[3])
+    attention_score = torch.matmul(query, torch.transpose(key, -1, -2)) / math.sqrt(key.shape[3])
     masked_attention_score = attention_score + attention_mask
-    softmax_attention = torch.nn.Softmax(masked_attention_score, dim=3)
+    softmax_attention = torch.nn.functional.softmax(masked_attention_score, dim=-1)
     multihead = torch.matmul(softmax_attention, value)
     multihead = rearrange(multihead, 'b t h d -> b h (t d)')
     return multihead
@@ -55,3 +55,4 @@ class CausalSelfAttention(nn.Module):
     # Calculate the multi-head attention.
     attn_value = self.attention(key_layer, query_layer, value_layer, attention_mask)
     return attn_value
+
