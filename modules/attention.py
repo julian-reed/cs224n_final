@@ -35,7 +35,7 @@ class CausalSelfAttention(nn.Module):
   def attention(self, key, query, value, attention_mask):
     multihead = torch.tensor(key.shape, dtype=float)
     for i in range(key.shape[1]):
-      head_i = (torch.nn.Softmax((query[:, i, :, :] @ torch.transpose(key, 2, 3)[:, i, :, :]) / math.sqrt(key.shape[2]), dim=4) + attention_mask.repeat(1, 1, attention_mask.shape[3], 1)) @ value[:, i, :, :]
+      head_i = (torch.nn.Softmax(((query[:, i, :, :] @ torch.transpose(key, 2, 3)[:, i, :, :]) / math.sqrt(key.shape[2])) + attention_mask.repeat(1, 1, attention_mask.shape[3], 1), dim=4)) @ value[:, i, :, :]
       multihead[:, i, :, :] = head_i
     multihead = torch.flatten(torch.transpose(multihead, 1, 2), start_dim = 2, end_dim = 3)
     return multihead
