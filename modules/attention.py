@@ -4,7 +4,6 @@ import math
 from einops import rearrange
 from torch import nn
 
-
 class CausalSelfAttention(nn.Module):
   def __init__(self, config):
     super().__init__()
@@ -35,7 +34,10 @@ class CausalSelfAttention(nn.Module):
   def attention(self, key, query, value, attention_mask):
     multihead = torch.tensor(key.shape, dtype=float)
     for i in range(key.shape[1]):
-      head_i = (torch.nn.Softmax(((query[:, i, :, :] @ torch.transpose(key, 2, 3)[:, i, :, :]) / math.sqrt(key.shape[2])) + attention_mask.repeat(1, 1, attention_mask.shape[3], 1), dim=4)) @ value[:, i, :, :]
+      attention_score = torch.matmul(query, torch.transpose(key, 2, 3)) / math.sqrt(key.shape[3])
+      masked_attention_score = attention_score + attention_mask
+      softmax_attention = torch.nn.Softmax(masked_attention_score, dim=3)
+      head_i = torch.matmul(softmax_attention, value)
       multihead[:, i, :, :] = head_i
     multihead = torch.flatten(torch.transpose(multihead, 1, 2), start_dim = 2, end_dim = 3)
     return multihead
@@ -56,3 +58,4 @@ class CausalSelfAttention(nn.Module):
     # Calculate the multi-head attention.
     attn_value = self.attention(key_layer, query_layer, value_layer, attention_mask)
     return attn_value
+
