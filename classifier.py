@@ -57,6 +57,13 @@ class GPT2SentimentClassifier(torch.nn.Module):
     self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
     self.classifier = torch.nn.Linear(config.hidden_size, config.num_labels)
 
+  '''
+  Within this file, you are to implement the GPT2SentimentClassifer. You will implement this class to encode
+  sentences using GPT 2 and obtain the last token's representation for each sentence. The class will then
+  classify the sentence by applying on dropout on this representation and then projecting it using a linear
+  layer. Finally (already implemented), the model must be able to adjust its parameters depending on whether
+  we are using pre-trained weights or are fine-tuning.
+  '''
 
   def forward(self, input_ids, attention_mask):
     '''Takes a batch of sentences and returns logits for sentiment classes'''
@@ -65,10 +72,17 @@ class GPT2SentimentClassifier(torch.nn.Module):
     ###       HINT: You should consider what is an appropriate return value given that
     ###       the training loop currently uses F.cross_entropy as the loss function.
     ### YOUR CODE HERE
-    out = self.gpt(input_ids, attention_mask)
-    hs = out.last_hidden_state
-    hs = hs[:, 0, :]
-    return self.classifier(self.dropout(hs))
+    # obtain the last token's representation for each sentence
+    last_hidden, last_token = self.gpt.forward(input_ids, attention_mask)
+    # classify the sentence by applying on dropout on this representation and then projecting it using a linear layer
+    last_token = self.dropout(last_token)
+    projection = self.linear(last_token)
+    # adjust parameters depending on whether we are using pre-trained weights or are fine-tuning.
+    #for param in self.gpt.parameters():
+        #if (param.requires_grad):
+          # should already be implemented????
+    
+    return projection
 
 
 
