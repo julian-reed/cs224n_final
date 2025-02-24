@@ -44,7 +44,7 @@ class GPT2Layer(nn.Module):
            - A feed-forward layer that applies transformations to further refine the hidden states.
     """
 
-    ### YOUR CODE HERE
+    
     b4AttInput = self.attention_layer_norm(hidden_states)
     b4AttOutput = self.self_attention(b4AttInput, attention_mask)
     multiAttOutput = self.add(hidden_states, b4AttOutput, self.attention_dense, self.attention_dropout)

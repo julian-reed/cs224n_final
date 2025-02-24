@@ -53,6 +53,8 @@ class GPT2Model(GPTPreTrainedModel):
     given some input token indices w1, . . . , wk ∈ N, the embedding layer performs an embedding lookup to convert the 
     indices into token embeddings v1, . . . , vk ∈ R^D.
     '''
+    
+    
     input_shape = input_ids.size()
     seq_length = input_shape[1]
 
