@@ -45,6 +45,7 @@ class GPT2Model(GPTPreTrainedModel):
 
   def embed(self, input_ids):
     '''
+    GPT2 context length = 1024
     Implements embeddings layers. 
     input_ids represents the tokenized input
 
@@ -58,8 +59,11 @@ class GPT2Model(GPTPreTrainedModel):
     inputs_embeds = None
 
     ### YOUR CODE HERE
-    raise NotImplementedError
 
+    # get word embeddings
+    word_embeds = self.word_embedding(input_ids)
+
+    ### END MY CODE
 
     pos_ids = self.position_ids[:, :seq_length]
     pos_embeds = None
@@ -68,7 +72,14 @@ class GPT2Model(GPTPreTrainedModel):
     ###       Then, add two embeddings together; then apply dropout and return.
     ### YOUR CODE HERE
 
-    final_embeddings = self.embed_dropout(final_embeddings)
+    # get position embeddings
+    pos_embeds = self.pos_embedding(pos_ids)
+
+    # add two embeddings toegther
+    inputs_embeds = torch.add(word_embeds, pos_embeds)
+
+    # apply dropout
+    final_embeddings = self.embed_dropout(inputs_embeds)
     return final_embeddings
 
 
