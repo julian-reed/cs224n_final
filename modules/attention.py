@@ -36,7 +36,7 @@ class CausalSelfAttention(nn.Module):
     masked_attention_score = attention_score + attention_mask
     softmax_attention = torch.nn.Softmax(masked_attention_score, dim=3)
     multihead = torch.matmul(softmax_attention, value)
-    multihead = torch.flatten(torch.transpose(multihead, 1, 2), start_dim = 2, end_dim = 3)
+    multihead = rearrange(multihead, 'b t h d -> b h (t d)')
     return multihead
 
   def forward(self, hidden_states, attention_mask):
