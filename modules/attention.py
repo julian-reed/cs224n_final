@@ -34,8 +34,8 @@ class CausalSelfAttention(nn.Module):
   def attention(self, key, query, value, attention_mask):
     attention_score = torch.matmul(query, torch.transpose(key, -1, -2)) / math.sqrt(key.shape[3])
     neg_inf_matrix = torch.full((key.shape[2], key.shape[2]), float('-inf'))
-    upper_triangular_mask = torch.triu(neg_inf_matrix)
-    masked_attention_score = attention_score + upper_triangular_mask
+    upper_triangular_mask = torch.triu(neg_inf_matrix, diagonal=1)
+    masked_attention_score = attention_score + upper_triangular_mask + attention_mask
     softmax_attention = torch.nn.functional.softmax(masked_attention_score, dim=-1)
     multihead = torch.matmul(softmax_attention, value)
     multihead = rearrange(multihead, 'b t h d -> b h (t d)')
