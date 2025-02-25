@@ -78,11 +78,7 @@ class ParaphraseGPT(nn.Module):
     # GPT-2 embedding
     output = self.gpt.forward(input_ids, attention_mask)
 
-    # Use last token's embedding for classification
-    #last_token_embedding = output['last_token']
-    #logits = self.paraphrase_detection_head(last_token_embedding)
-    #print("logits:")
-    #print(logits)
+    
     logits = self.gpt.hidden_state_to_token(output['last_token'])
 
     return logits
