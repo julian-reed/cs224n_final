@@ -29,7 +29,7 @@ class GPT2Model(GPTPreTrainedModel):
 
     # Register position_ids (1, len position emb) to buffer because it is a constant.
     position_ids = torch.arange(config.max_position_embeddings).unsqueeze(0)
-    self.register_buffer('position_ids', position_ids)
+    self.register_buffer('position_ids', position_ids.to(torch.device("cuda" if torch.cuda.is_available() else "cpu")))
 
     # GPT-2 layers.
     self.gpt_layers = nn.ModuleList([GPT2Layer(config) for _ in range(config.num_hidden_layers)])

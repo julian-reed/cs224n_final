@@ -32,8 +32,9 @@ class CausalSelfAttention(nn.Module):
     return proj
 
   def attention(self, key, query, value, attention_mask):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     attention_score = torch.matmul(query, torch.transpose(key, -1, -2)) / math.sqrt(key.shape[3])
-    neg_inf_matrix = torch.full((key.shape[2], key.shape[2]), float('-inf'))
+    neg_inf_matrix = torch.full((key.shape[2], key.shape[2]), float('-inf'), device=device)
     upper_triangular_mask = torch.triu(neg_inf_matrix, diagonal=1)
     masked_attention_score = attention_score + upper_triangular_mask + attention_mask
     softmax_attention = torch.nn.functional.softmax(masked_attention_score, dim=-1)

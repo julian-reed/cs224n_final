@@ -73,9 +73,13 @@ class GPT2SentimentClassifier(torch.nn.Module):
     ###       the training loop currently uses F.cross_entropy as the loss function.
     ### YOUR CODE HERE
     # obtain the last token's representation for each sentence
-    last_hidden, last_token = self.gpt.forward(input_ids, attention_mask)
+    device = input_ids.device  # Ensure all tensors are on the same device
+
+    input_ids = input_ids.to(device)
+    attention_mask = attention_mask.to(device)
+    getOutput = self.gpt.forward(input_ids, attention_mask)
     # classify the sentence by applying on dropout on this representation and then projecting it using a linear layer
-    last_token = self.dropout(last_token)
+    last_token = self.dropout(getOutput['last_token'])
     projection = self.linear(last_token)
     # adjust parameters depending on whether we are using pre-trained weights or are fine-tuning.
     #for param in self.gpt.parameters():
@@ -165,27 +169,29 @@ class SentimentTestDataset(Dataset):
 def load_data(filename, flag='train'):
   num_labels = {}
   data = []
+  encoding_type = 'utf-8'  # Use UTF-8 encoding to avoid UnicodeDecodeError
   if flag == 'test':
-    with open(filename, 'r') as fp:
-      for record in csv.DictReader(fp, delimiter='\t'):
-        sent = record['sentence'].lower().strip()
-        sent_id = record['id'].lower().strip()
-        data.append((sent, sent_id))
+      with open(filename, 'r', encoding=encoding_type) as fp:
+          for record in csv.DictReader(fp, delimiter='\t'):
+              sent = record['sentence'].lower().strip()
+              sent_id = record['id'].lower().strip()
+              data.append((sent, sent_id))
   else:
-    with open(filename, 'r') as fp:
-      for record in csv.DictReader(fp, delimiter='\t'):
-        sent = record['sentence'].lower().strip()
-        sent_id = record['id'].lower().strip()
-        label = int(record['sentiment'].strip())
-        if label not in num_labels:
-          num_labels[label] = len(num_labels)
-        data.append((sent, label, sent_id))
-    print(f"load {len(data)} data from {filename}")
+      with open(filename, 'r', encoding=encoding_type) as fp:
+          for record in csv.DictReader(fp, delimiter='\t'):
+              sent = record['sentence'].lower().strip()
+              sent_id = record['id'].lower().strip()
+              label = int(record['sentiment'].strip())
+              if label not in num_labels:
+                  num_labels[label] = len(num_labels)
+              data.append((sent, label, sent_id))
+      print(f"load {len(data)} data from {filename}")
 
   if flag == 'train':
-    return data, len(num_labels)
+      return data, len(num_labels)
   else:
-    return data
+      return data
+
 
 
 # Evaluate the model on dev examples.
@@ -370,9 +376,9 @@ def get_args():
   parser.add_argument("--use_gpu", action='store_true')
 
   parser.add_argument("--batch_size", help='sst: 64, cfimdb: 8 can fit a 12GB GPU', type=int, default=8)
-  parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
+  parser.add_argument("--hidden_dropout_prob", type=float, default=0.45)
   parser.add_argument("--lr", type=float, help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
-                      default=1e-3)
+                      default=1e-4)
 
   args = parser.parse_args()
   return args

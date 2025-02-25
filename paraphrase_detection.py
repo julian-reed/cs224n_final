@@ -71,9 +71,18 @@ class ParaphraseGPT(nn.Module):
     """
 
     'Takes a batch of sentences and produces embeddings for them.'
-    ### YOUR CODE HERE
-    raise NotImplementedError
+    device = input_ids.device
+    input_ids = input_ids.to(device)
+    attention_mask = attention_mask.to(device)
 
+    # GPT-2 embedding
+    output = self.gpt(input_ids, attention_mask)
+
+    # Use last token's embedding for classification
+    last_token_embedding = output['last_token']
+    logits = self.paraphrase_detection_head(last_token_embedding)
+
+    return logits
 
 
 def save_model(model, optimizer, args, filepath):
