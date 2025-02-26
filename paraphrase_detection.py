@@ -159,7 +159,7 @@ def train(args):
 def test(args):
   """Evaluate your model on the dev and test datasets; save the predictions to disk."""
   device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
-  saved = torch.load(args.filepath)
+  saved = torch.load(args.filepath, weights_only=False)
 
   model = ParaphraseGPT(saved['args'])
   model.load_state_dict(saved['model'])
@@ -211,6 +211,8 @@ def get_args():
   parser.add_argument("--model_size", type=str,
                       help="The model size as specified on hugging face. DO NOT use the xl model.",
                       choices=['gpt2', 'gpt2-medium', 'gpt2-large'], default='gpt2')
+  parser.add_argument("--filepath", type=str, required=False, help="Path to saved model checkpoint")
+  parser.add_argument("--skip_train", action='store_true', help="Skip training and directly test the model", default=False)
 
   args = parser.parse_args()
   return args
@@ -237,7 +239,12 @@ def add_arguments(args):
 
 if __name__ == "__main__":
   args = get_args()
-  args.filepath = f'{args.epochs}-{args.lr}-paraphrase.pt'  # Save path.
+  if not args.filepath:
+    args.filepath = f'{args.epochs}-{args.lr}-paraphrase.pt'  # Save path.
   seed_everything(args.seed)  # Fix the seed for reproducibility.
-  train(args)
-  test(args)
+  if args.skip_train:
+    print("Skipping training. Loading and testing the model...")
+    test(args)
+  else:
+    train(args)
+    test(args)

@@ -100,7 +100,7 @@ class ParaphraseDetectionTestDataset(Dataset):
 def load_paraphrase_data(paraphrase_filename, split='train'):
   paraphrase_data = []
   if split == 'test':
-    with open(paraphrase_filename, 'r', enocding='utf-8') as fp:
+    with open(paraphrase_filename, 'r', encoding='utf-8') as fp:
       for record in csv.DictReader(fp, delimiter='\t'):
         sent_id = record['id'].lower().strip()
         paraphrase_data.append((preprocess_string(record['sentence1']),
