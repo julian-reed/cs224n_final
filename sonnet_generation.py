@@ -139,7 +139,7 @@ def save_model(model, optimizer, args, filepath):
 
 
 def train(args):
-  """Train GPT-2 for paraphrase detection on the Quora dataset."""
+  """Train GPT-2 for sonnet generation on the Sonnet dataset."""
   device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
   # Create the data and its corresponding datasets and dataloader.
   sonnet_dataset = SonnetsDataset(args.sonnet_path)
