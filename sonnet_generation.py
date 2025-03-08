@@ -66,9 +66,8 @@ class SonnetGPT(nn.Module):
     attention_mask = attention_mask.to(device)
 
     output = self.gpt.forward(input_ids, attention_mask)
-
     
-    logits = self.gpt.hidden_state_to_token(output['hidden_states'])
+    logits = self.gpt.hidden_state_to_token(output['last_hidden_state'])
 
     return logits
 
