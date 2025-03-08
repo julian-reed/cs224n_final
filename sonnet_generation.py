@@ -123,7 +123,6 @@ class SonnetGPT(nn.Module):
     generated_output = self.tokenizer.decode(token_ids[0].cpu().numpy().tolist())[3:]
     return token_ids, generated_output
 
-
 def save_model(model, optimizer, args, filepath):
   save_info = {
     'model': model.state_dict(),
@@ -157,6 +156,9 @@ def train(args):
   optimizer = AdamW(model.parameters(), lr=lr)
 
   # Run for the specified number of epochs.
+  prevTrainLoss = float('inf')
+  TRAIN_LOSS_THRESHOLD = 0.05
+
   for epoch in range(args.epochs):
     model.train()
     train_loss = 0
@@ -190,6 +192,10 @@ def train(args):
       print(f'{batch[1]}{output[1]}\n\n')
 
     # TODO: consider a stopping condition to prevent overfitting on the small dataset of sonnets.
+    if (abs(prevTrainLoss - train_loss) < TRAIN_LOSS_THRESHOLD):
+      print(f'Train loss did not improve by minimum threshold (loss increase = {prevTrainLoss - train_loss}, threshold = {TRAIN_LOSS_THRESHOLD}). Thus, activating stopping condition.')
+      break
+    prevTrainLoss = train_loss
     save_model(model, optimizer, args, f'{epoch}_{args.filepath}')
 
 
