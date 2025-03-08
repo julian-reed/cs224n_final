@@ -66,9 +66,8 @@ class SonnetGPT(nn.Module):
     attention_mask = attention_mask.to(device)
 
     output = self.gpt.forward(input_ids, attention_mask)
-
     
-    logits = self.gpt.hidden_state_to_token(output['hidden_states'])
+    logits = self.gpt.hidden_state_to_token(output['last_hidden_state'])
 
     return logits
 
@@ -140,7 +139,7 @@ def save_model(model, optimizer, args, filepath):
 
 
 def train(args):
-  """Train GPT-2 for paraphrase detection on the Quora dataset."""
+  """Train GPT-2 for sonnet generation on the Sonnet dataset."""
   device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
   # Create the data and its corresponding datasets and dataloader.
   sonnet_dataset = SonnetsDataset(args.sonnet_path)
