@@ -28,7 +28,7 @@ from models.gpt2 import GPT2Model
 from optimizer import AdamW, SOAP, SOAPV2
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
-
+from peft import get_peft_model, LoraConfig, TaskType
 TQDM_DISABLE = False
 
 
@@ -48,16 +48,34 @@ class SonnetGPT(nn.Module):
 
   def __init__(self, args):
     super().__init__()
-    #self.gpt = AutoModelForCausalLM.from_pretrained("gpt2")
-    #self.tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    self.gpt = AutoModelForCausalLM.from_pretrained("gpt2")
+    self.tokenizer = AutoTokenizer.from_pretrained("gpt2")
     #self.tokenizer.pad_token = self.tokenizer.eos_token
-    self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
-    self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+    #self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
+    #self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
     self.tokenizer.pad_token = self.tokenizer.eos_token
 
-    # By default, fine-tune the full model. TODO: this is maybe not idea.
+    lora_config = LoraConfig(
+      task_type=TaskType.CAUSAL_LM,
+      r=1024,
+      lora_alpha=2048,
+      lora_dropout=0.25,
+      target_modules=["c_attn", "c_proj"] 
+    )
+
+    self.gpt = get_peft_model(self.gpt, lora_config)
+
     for param in self.gpt.parameters():
-      param.requires_grad = True
+      param.requires_grad = False
+      
+    # Unfreeze only the LoRA parameters
+    for name, param in self.gpt.named_parameters():
+      if "lora" in name:
+        param.requires_grad = True
+
+    # By default, fine-tune the full model. TODO: this is maybe not idea.
+    #for param in self.gpt.parameters():
+        #param.requires_grad = True
 
   def forward(self, input_ids, attention_mask):
     """
@@ -70,9 +88,14 @@ class SonnetGPT(nn.Module):
     input_ids = input_ids.to(device)
     attention_mask = attention_mask.to(device)
 
-    output = self.gpt.forward(input_ids, attention_mask)
+    outputs = self.gpt(input_ids=input_ids, attention_mask=attention_mask)
     
-    logits = self.gpt.hidden_state_to_token(output['last_hidden_state'])
+    # For AutoModelForCausalLM, the logits are directly available in the outputs
+    logits = outputs.logits
+
+    #output = self.gpt.forward(input_ids, attention_mask)
+    
+    #logits = self.gpt.hidden_state_to_token(output['last_hidden_state'])
 
     return logits
 
@@ -213,6 +236,7 @@ def train(args, last_epoch):
     save_model(model, optimizer, args, f'{epoch}_{args.filepath}')
 
 
+
 @torch.no_grad()
 def generate_submission_sonnets(args, last_epoch):
   print(f'Generating submission sonnets based on model from epoch {last_epoch}')
@@ -297,3 +321,4 @@ if __name__ == "__main__":
   last_epoch = 0
   train(args, last_epoch)
   generate_submission_sonnets(args, last_epoch)
+  
