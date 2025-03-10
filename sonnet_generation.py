@@ -25,7 +25,9 @@ from datasets import (
 )
 from models.gpt2 import GPT2Model
 
-from optimizer import AdamW
+from optimizer import AdamW, SOAP, SOAPV2
+
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 TQDM_DISABLE = False
 
@@ -42,10 +44,13 @@ def seed_everything(seed=11711):
 
 
 class SonnetGPT(nn.Module):
-  """Your GPT-2 Model designed for paraphrase detection."""
+  """Your GPT-2 Model designed for sonnet generation."""
 
   def __init__(self, args):
     super().__init__()
+    #self.gpt = AutoModelForCausalLM.from_pretrained("gpt2")
+    #self.tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    #self.tokenizer.pad_token = self.tokenizer.eos_token
     self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
     self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
     self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -137,7 +142,7 @@ def save_model(model, optimizer, args, filepath):
   print(f"save the model to {filepath}")
 
 
-def train(args):
+def train(args, last_epoch):
   """Train GPT-2 for sonnet generation on the Sonnet dataset."""
   device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
   # Create the data and its corresponding datasets and dataloader.
@@ -153,13 +158,17 @@ def train(args):
   model = model.to(device)
 
   lr = args.lr
-  optimizer = AdamW(model.parameters(), lr=lr)
+  #optimizer = SOAP(model.parameters(), lr=lr)
+  optimizer = SOAPV2(model.parameters(), lr=lr)
 
   # Run for the specified number of epochs.
   prevTrainLoss = float('inf')
-  TRAIN_LOSS_THRESHOLD = 0.05
+  shouldStop = False
+  TRAIN_LOSS_THRESHOLD = 0.01
 
   for epoch in range(args.epochs):
+    if shouldStop:
+      break
     model.train()
     train_loss = 0
     num_batches = 0
@@ -183,10 +192,14 @@ def train(args):
       num_batches += 1
 
     train_loss = train_loss / num_batches
+    last_epoch = epoch
     print(f"Epoch {epoch}: train loss :: {train_loss :.3f}.")
     print('Generating several output sonnets...')
     model.eval()
+    count = 1
     for batch in held_out_sonnet_dataset:
+      print(f'Printing sonnet {count} out of {len(held_out_sonnet_dataset)}')
+      count += 1
       encoding = model.tokenizer(batch[1], return_tensors='pt', padding=True, truncation=True).to(device)
       output = model.generate(encoding['input_ids'], temperature=args.temperature, top_p=args.top_p)
       print(f'{batch[1]}{output[1]}\n\n')
@@ -194,15 +207,18 @@ def train(args):
     # TODO: consider a stopping condition to prevent overfitting on the small dataset of sonnets.
     if (abs(prevTrainLoss - train_loss) < TRAIN_LOSS_THRESHOLD):
       print(f'Train loss did not improve by minimum threshold (loss increase = {prevTrainLoss - train_loss}, threshold = {TRAIN_LOSS_THRESHOLD}). Thus, activating stopping condition.')
+      shouldStop = True
       break
     prevTrainLoss = train_loss
     save_model(model, optimizer, args, f'{epoch}_{args.filepath}')
 
 
 @torch.no_grad()
-def generate_submission_sonnets(args):
+def generate_submission_sonnets(args, last_epoch):
+  print(f'Generating submission sonnets based on model from epoch {last_epoch}')
   device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
-  saved = torch.load(f'{args.epochs-1}_{args.filepath}', weights_only=False)
+  #saved = torch.load(f'{args.epochs-1}_{args.filepath}', weights_only=False)
+  saved = torch.load(f'{last_epoch}_{args.filepath}', weights_only=False)
 
   model = SonnetGPT(saved['args'])
   model.load_state_dict(saved['model'])
@@ -278,5 +294,6 @@ if __name__ == "__main__":
   args = get_args()
   args.filepath = f'{args.epochs}-{args.lr}-sonnet.pt'  # Save path.
   seed_everything(args.seed)  # Fix the seed for reproducibility.
-  train(args)
-  generate_submission_sonnets(args)
+  last_epoch = 0
+  train(args, last_epoch)
+  generate_submission_sonnets(args, last_epoch)
