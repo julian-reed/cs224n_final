@@ -7,6 +7,7 @@ Trains and evaluates GPT2SentimentClassifier on SST and CFIMDB
 import random, numpy as np, argparse
 from types import SimpleNamespace
 import csv
+import copy
 
 import torch
 import torch.nn.functional as F
@@ -16,6 +17,7 @@ from sklearn.metrics import f1_score, accuracy_score
 
 from models.gpt2 import GPT2Model
 from optimizer import AdamW
+from smart_optimizer import Smart
 from tqdm import tqdm
 
 TQDM_DISABLE = False
@@ -290,7 +292,9 @@ def train(args):
   model = model.to(device)
 
   lr = args.lr
-  optimizer = AdamW(model.parameters(), lr=lr)
+
+  params_tilde = copy.deepcopy(list(model.parameters()))
+  optimizer = Smart(model.parameters(), params_tilde, model, train_dataset.collate_fn(train_dataset))
   best_dev_acc = 0
 
   # Run for the specified number of epochs.
