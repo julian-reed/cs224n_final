@@ -46,15 +46,14 @@ class GPT2Model(GPTPreTrainedModel):
   def embed(self, input_ids):
     '''
     GPT2 context length = 1024
-    Implements embeddings layers. 
+    Implements embeddings layers.
     input_ids represents the tokenized input
 
     input embeddings should be the sum of positional embeddings and token embeddings
-    given some input token indices w1, . . . , wk ∈ N, the embedding layer performs an embedding lookup to convert the 
+    given some input token indices w1, . . . , wk ∈ N, the embedding layer performs an embedding lookup to convert the
     indices into token embeddings v1, . . . , vk ∈ R^D.
     '''
-    
-    
+
     input_shape = input_ids.size()
     seq_length = input_shape[1]
 
@@ -63,7 +62,7 @@ class GPT2Model(GPTPreTrainedModel):
     ### YOUR CODE HERE
 
     # get word embeddings
-    word_embeds = self.word_embedding(input_ids)
+    word_embeds = self.word_embedding(input_ids.long())
 
     ### END MY CODE
 
@@ -84,7 +83,6 @@ class GPT2Model(GPTPreTrainedModel):
     final_embeddings = self.embed_dropout(inputs_embeds)
     return final_embeddings
 
-
   def encode(self, hidden_states, attention_mask):
     """
     hidden_states: the output from the embedding layer [batch_size, seq_len, hidden_size]
@@ -94,12 +92,13 @@ class GPT2Model(GPTPreTrainedModel):
     # Returns extended_attention_mask of size [batch_size, 1, 1, seq_len].
     # Distinguishes between non-padding tokens (with a value of 0) and padding tokens
     # (with a value of a large negative number).
-    extended_attention_mask: torch.Tensor = get_extended_attention_mask(attention_mask, self.dtype)
+    extended_attention_mask: torch.Tensor = get_extended_attention_mask(attention_mask, dtype=hidden_states.dtype)
 
-    # Pass the hidden states through the encoder layers.
+    # Pass the hidden states through the encoder la
+    # yers.
     for i, layer_module in enumerate(self.gpt_layers):
       # Feed the encoding from the last bert_layer to the next.
-      hidden_states = layer_module(hidden_states, extended_attention_mask)
+      hidden_states = layer_module(hidden_states, extended_attention_mask).to(dtype=torch.float32)
 
     return hidden_states
 
@@ -112,7 +111,7 @@ class GPT2Model(GPTPreTrainedModel):
     embedding_output = self.embed(input_ids=input_ids)
 
     # Feed to a transformer (a stack of GPTLayers).
-    sequence_output = self.encode(embedding_output, attention_mask=attention_mask)
+    sequence_output = self.encode(embedding_output, attention_mask=attention_mask).to(torch.float32)
     sequence_output = self.final_layer_norm(sequence_output)
 
     # Get the hidden state of the final token.
