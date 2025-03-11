@@ -10,15 +10,17 @@ import csv
 import copy
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from transformers import GPT2Tokenizer
 from sklearn.metrics import f1_score, accuracy_score
 
 from models.gpt2 import GPT2Model
-from optimizer import AdamW
-from smart_optimizer import Smart
 from tqdm import tqdm
+
+from smart_optimizer import SMARTLoss
+from optimizer import AdamW
 
 TQDM_DISABLE = False
 
@@ -87,7 +89,7 @@ class GPT2SentimentClassifier(torch.nn.Module):
     #for param in self.gpt.parameters():
         #if (param.requires_grad):
           # should already be implemented????
-    
+
     return projection
 
 
@@ -291,28 +293,47 @@ def train(args):
   model = GPT2SentimentClassifier(config)
   model = model.to(device)
 
-  lr = args.lr
+  inf_norm = lambda x: torch.norm(x, p=float('inf'), dim=-1, keepdim=True)
 
-  params_tilde = copy.deepcopy(list(model.parameters()))
-  optimizer = Smart(model.parameters(), params_tilde, model, train_dataset.collate_fn(train_dataset))
+  regularizer = SMARTLoss(
+    eval_fn = model,
+    loss_fn = nn.MSELoss(),
+    loss_last_fn = nn.MSELoss(),
+    norm_fn = inf_norm,
+    num_steps = 1,
+    step_size = 1e-3,
+    epsilon = 1e-6,
+    noise_var = 1e-5
+  )
+
+  optimizer = AdamW(model.parameters(), lr=args.lr)
   best_dev_acc = 0
 
   # Run for the specified number of epochs.
+
   for epoch in range(args.epochs):
     model.train()
     train_loss = 0
     num_batches = 0
+    reg_lambda = 1e-3
+
     for batch in tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE):
       b_ids, b_mask, b_labels = (batch['token_ids'],
                                  batch['attention_mask'], batch['labels'])
 
-      b_ids = b_ids.to(device)
+      b_ids = b_ids.to(device).long()
       b_mask = b_mask.to(device)
-      b_labels = b_labels.to(device)
+      b_labels = b_labels.to(device, dtype=torch.long)
 
       optimizer.zero_grad()
-      logits = model(b_ids, b_mask)
+
+      logits = model(input_ids=b_ids, attention_mask=b_mask)
+
       loss = F.cross_entropy(logits, b_labels.view(-1), reduction='sum') / args.batch_size
+      # input_embed = model.gpt.embed(b_ids)
+      # regularizer_loss = regularizer.forward(input_embed, logits, b_mask)
+      regularizer_loss = regularizer.forward(b_ids, logits, b_mask)
+      loss += reg_lambda * regularizer_loss
 
       loss.backward()
       optimizer.step()
