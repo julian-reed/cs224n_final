@@ -1,123 +1,71 @@
-from typing import Callable, Iterable, Tuple
-import math
+from typing import Union, Callable
 
 import torch
-from torch.optim import Optimizer
-from optimizer import AdamW
+import torch.nn as nn
+import torch.nn.functional as F
+from sklearn.metrics import normalized_mutual_info_score
+from torch import Tensor
+from itertools import count
 
 
-class Smart(Optimizer):
+def exists(val):
+    return val is not None
+
+
+def default(val, d):
+    if exists(val):
+        return val
+    return d
+
+
+def inf_norm(x):
+    return torch.norm(x, p=float('inf'), dim=-1, keepdim=True)
+
+
+class SMARTLoss(nn.Module):
+
     def __init__(
             self,
-            params: Iterable[torch.nn.parameter.Parameter],
-            params_tilde: Iterable[torch.nn.parameter.Parameter],
-            model,
-            dataset,
-            solve_iters=10,
-            x_iters=20,
-            lr: float = 1e-3,
-            beta: float = 0.9,
-            sigma: float = 1e-2,
-            eps: float = 1e-2,
-            adam_lr: float = 1e-4,
-    ):
-        if lr < 0.0:
-            raise ValueError("Invalid learning rate: {} - should be >= 0.0".format(lr))
-        if adam_lr < 0.0:
-            raise ValueError("Invalid learning rate: {} - should be >= 0.0".format(adam_lr))
-        if not 0.0 <= beta < 1.0:
-            raise ValueError("Invalid beta parameter: {} - should be between 0.0 and 1.0".format(beta))
-        if not 0.0 <= sigma:
-            raise ValueError("Invalid epsilon value: {} - should be >= 0.0".format(sigma))
-        if not 0.0 <= eps:
-            raise ValueError("Invalid epsilon value: {} - should be >= 0.0".format(eps))
-        defaults = dict(params_tilde=params_tilde, model=model, dataset=dataset, lr=lr, beta=beta, sigma=sigma, eps=eps,
-                        adam_lr=adam_lr, solve_iters=solve_iters, x_iters=x_iters)
-        super().__init__(params, defaults)
+            eval_fn: Callable,
+            loss_fn: Callable,
+            loss_last_fn: Callable = None,
+            norm_fn: Callable = inf_norm,
+            num_steps: int = 1,
+            step_size: float = 1e-3,
+            epsilon: float = 1e-6,
+            noise_var: float = 1e-5
+    ) -> None:
+        super().__init__()
+        self.eval_fn = eval_fn
+        self.loss_fn = loss_fn
+        self.loss_last_fn = default(loss_last_fn, loss_fn)
+        self.norm_fn = norm_fn
+        self.num_steps = num_steps
+        self.step_size = step_size
+        self.epsilon = epsilon
+        self.noise_var = noise_var
 
-    def f(self, forward, x, attention_mask, theta):
-        logits = forward(x, attention_mask, theta=theta)
-        probs = torch.nn.functional.softmax(logits, dim=-1)
-        return probs
+    def forward(self, embed: Tensor, state: Tensor, attention_mask) -> Tensor:
+        noise = torch.randn_like(embed.float(), requires_grad=True) * self.noise_var
 
-    def g(self, model, attention_mask, x, x_tilde, theta, batch_size):
-        x_tilde.requires_grad_(True)
-        x[0].requires_grad_(True)
-        x_tilde[0].requires_grad_(True)
-        l = (torch.nn.functional.kl_div(self.f(model.forward, x[0], attention_mask, theta),
-                                        self.f(model.forward, x_tilde[0], attention_mask, theta)) +
-             torch.nn.functional.kl_div(self.f(model.forward, x_tilde[0], attention_mask, theta),
-                                        self.f(model.forward, x[0], attention_mask, theta)))
-        if x.shape[0] >= 1:
-            for i in range(x.shape[0]):
-                x[i].requires_grad_(True)
-                x_tilde[i].requires_grad_(True)
-                l += (torch.nn.functional.kl_div(self.f(model.forward, x[i], attention_mask, theta),
-                                                 self.f(model.forward, x_tilde[i], attention_mask, theta)) +
-                      torch.nn.functional.kl_div(self.f(model.forward, x_tilde[i], attention_mask, theta),
-                                                 self.f(model.forward, x[i], attention_mask, theta)))
-        d_l = l.backward()
-        return d_l / batch_size
-
-    def step(self, closure: Callable = None):
-        loss = None
-        if closure is not None:
-            loss = closure()
-
-        for group in self.param_groups:
-            counter = 0
-            for p, p_tilde in zip(group["params"], group["params_tilde"]):
-                if p.grad is None:
-                    continue
-                grad = p.grad.data
-                if grad.is_sparse:
-                    raise RuntimeError(
-                        "Adam does not support sparse gradients, and Smart uses Adam, please consider SparseAdam instead")
-
-                # State should be stored in this dictionary.
-                state = self.state[p]
-
-                ### TODO: Complete the implementation of AdamW here, reading and saving
-                ###       your state in the `state` dictionary above.
-                ###       The hyperparameters can be read from the `group` dictionary
-                ###       (they are lr, betas, eps, weight_decay, as saved in the constructor).
-                ###
-                ###       To complete this implementation:
-                ###       1. Update the first and second moments of the gradients.
-                ###       2. Apply bias correction
-                ###          (using the "efficient version" given in https://arxiv.org/abs/1412.6980;
-                ###          also given in the pseudo-code in the project description).
-                ###       3. Update parameters (p.data).
-                ###       4. Apply weight decay after the main gradient-based updates.
-                ###
-                ###       Refer to the default project handout for more details.
-                ### YOUR CODE HERE
-                if len(state) == 0:
-                    state["step"] = 0
-                    state["exp_avg"] = torch.zeros_like(p.data)
-                    state["exp_avg_sq"] = torch.zeros_like(p.data)
-
-                state["step"] += 1
-
-                params_bar = p
-                batch_size = int(group["dataset"]["token_ids"].shape[0] / group["solve_iters"])
-                batches = torch.utils.data.DataLoader(group["dataset"], batch_size=batch_size, shuffle=True,
-                                                      drop_last=True)
-                for batch in batches:
-                    v = torch.normal(mean=0, std=group["sigma"], size=batch["token_ids"].shape)
-                    x_tilde = batch["token_ids"] + v
-                    for i in range(batch["token_ids"].shape[0]):
-                        for m in range(group["x_iters"]):
-                            g_tilde_unscaled = self.g(group["model"], batch["attention_mask"], batch["token_ids"][i],
-                                                      x_tilde[i], params_bar, batch_size)
-                            g_i_tilde = g_tilde_unscaled / torch.linalg.norm(g_tilde_unscaled, ord=float('inf'))
-                            while torch.linalg.norm(x_tilde[i] - batch["token_ids"][i], ord=float('inf')) <= group[
-                                "eps"]:
-                                x_tilde[i] += group["lr"] * g_i_tilde
-                    adam_optimizer = AdamW(params_bar, lr=group["adam_lr"])
-                    adam_optimizer.step()
-                p.data = params_bar.data
-                p_tilde.data = (1 - group["beta"]) * params_bar + group["beta"] * p_tilde.data
-                counter += 1
-
-        return loss
+        # Indefinite loop with counter
+        for i in count():
+            # Compute perturbed embed and states\
+            embed_perturbed = embed + noise
+            state_perturbed = self.eval_fn(embed_perturbed, attention_mask)
+            # Return final loss if last step (undetached state)
+            if i == self.num_steps:
+                return self.loss_last_fn(state_perturbed, state)
+                # Compute perturbation loss (detached state)
+            loss = self.loss_fn(state_perturbed, state.detach())
+            # Compute noise gradient ∂loss/∂noise
+            noise_gradient, = torch.autograd.grad(loss, noise, allow_unused=True)
+            # Move noise towards gradient to change state as much as possible
+            step = noise
+            if noise_gradient is not None:
+                step += self.step_size * noise_gradient
+            # Normalize new noise step into norm induced ball
+            step_norm = self.norm_fn(step)
+            noise = step / (step_norm + self.epsilon)
+            # Reset noise gradients for next step
+            noise = noise.detach().requires_grad_()
