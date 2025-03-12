@@ -78,3 +78,26 @@ def test_sonnet(
     # compute chrf
     chrf_score = chrf.corpus_score(generated_sonnets, [true_sonnets])
     return float(chrf_score.score)
+
+def test_sonnet_dev(
+    test_path='predictions/generated_sonnets_dev.txt',
+    gold_path='data/TRUE_sonnets_held_out_dev.txt'
+):
+    chrf = CHRF()
+
+    # get the sonnets
+    generated_sonnets = [x[1] for x in SonnetsDataset(test_path)]
+    true_sonnets = [x[1] for x in SonnetsDataset(gold_path)]
+    max_len = min(len(true_sonnets), len(generated_sonnets))
+    true_sonnets = true_sonnets[:max_len]
+    generated_sonnets = generated_sonnets[:max_len]
+
+    # compute chrf
+    chrf_score = chrf.corpus_score(generated_sonnets, [true_sonnets])
+    return float(chrf_score.score)
+
+def main():
+  print(f"dev_set: {test_sonnet_dev()}") 
+
+if __name__ == "__main__":
+  main()

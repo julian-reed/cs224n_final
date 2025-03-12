@@ -57,9 +57,9 @@ class SonnetGPT(nn.Module):
 
     lora_config = LoraConfig(
       task_type=TaskType.CAUSAL_LM,
-      r=1024,
-      lora_alpha=2048,
-      lora_dropout=0.25,
+      r=512,
+      lora_alpha=31000,
+      lora_dropout=0.1,
       target_modules=["c_attn", "c_proj"] 
     )
 
@@ -68,7 +68,6 @@ class SonnetGPT(nn.Module):
     for param in self.gpt.parameters():
       param.requires_grad = False
       
-    # Unfreeze only the LoRA parameters
     for name, param in self.gpt.named_parameters():
       if "lora" in name:
         param.requires_grad = True
@@ -219,6 +218,8 @@ def train(args, last_epoch):
     print(f"Epoch {epoch}: train loss :: {train_loss :.3f}.")
     print('Generating several output sonnets...')
     model.eval()
+  
+    """
     count = 1
     for batch in held_out_sonnet_dataset:
       print(f'Printing sonnet {count} out of {len(held_out_sonnet_dataset)}')
@@ -226,7 +227,7 @@ def train(args, last_epoch):
       encoding = model.tokenizer(batch[1], return_tensors='pt', padding=True, truncation=True).to(device)
       output = model.generate(encoding['input_ids'], temperature=args.temperature, top_p=args.top_p)
       print(f'{batch[1]}{output[1]}\n\n')
-
+    """
     # TODO: consider a stopping condition to prevent overfitting on the small dataset of sonnets.
     if (abs(prevTrainLoss - train_loss) < TRAIN_LOSS_THRESHOLD):
       print(f'Train loss did not improve by minimum threshold (loss increase = {prevTrainLoss - train_loss}, threshold = {TRAIN_LOSS_THRESHOLD}). Thus, activating stopping condition.')
@@ -263,7 +264,7 @@ def generate_submission_sonnets(args, last_epoch):
 
     print(f'{decoded_output}\n\n')
 
-  with open(args.sonnet_out, "w+") as f:
+  with open(args.sonnet_out, "w+", encoding="utf-8") as f:
     f.write(f"--Generated Sonnets-- \n\n")
     for sonnet in generated_sonnets:
       f.write(f"\n{sonnet[0]}\n")
@@ -278,7 +279,7 @@ def get_args():
   parser.add_argument("--sonnet_out", type=str, default="predictions/generated_sonnets.txt")
 
   parser.add_argument("--seed", type=int, default=11711)
-  parser.add_argument("--epochs", type=int, default=10)
+  parser.add_argument("--epochs", type=int, default=10) # Was 10
   parser.add_argument("--use_gpu", action='store_true')
 
   # Generation parameters.
@@ -319,6 +320,6 @@ if __name__ == "__main__":
   args.filepath = f'{args.epochs}-{args.lr}-sonnet.pt'  # Save path.
   seed_everything(args.seed)  # Fix the seed for reproducibility.
   last_epoch = 0
-  train(args, last_epoch)
-  generate_submission_sonnets(args, last_epoch)
+  #train(args, last_epoch)
+  generate_submission_sonnets(args, 9)
   
