@@ -1,4 +1,4 @@
-from typing import Callable, Iterable, Tuple
+from typing import Callable, Iterable, Tuple, List, Optional
 import math
 import numpy as np
 
@@ -100,153 +100,143 @@ class AdamW(Optimizer):
 
 class SOAPV2(Optimizer):
     """
-    Implementation of SOAP (Stochastic Optimization with Adaptive Projections)
-    
-    This optimizer implements the SOAP algorithm which combines stochastic gradient
-    descent with adaptive projection operations to improve convergence.
-    
-    Arguments:
-        params (iterable): iterable of parameters to optimize
-        lr (float): learning rate
-        beta1 (float, optional): coefficient for computing running averages of gradient (default: 0.9)
-        beta2 (float, optional): coefficient for computing running averages of squared gradient (default: 0.999)
-        epsilon (float, optional): term added to denominator for numerical stability (default: 1e-8)
-        weight_decay (float, optional): weight decay coefficient (default: 0)
-        projection_freq (int, optional): frequency of projection operations (default: 10)
-        projection_scale (float, optional): scaling factor for projections (default: 0.1)
-        adaptive_threshold (float, optional): threshold for adaptive projection (default: 0.01)
+    Shampoo with Adam in the Preconditioner's eigenbasis (SOAP) Optimizer.
+
+    This code is derived from code provided in the paper (https://github.com/nikhilvyas/SOAP), and optimized to fit our model.
     """
-    
-    '''
-    Best hyperparams so far (dev set score = 42.104):
-    lr=2e-3, beta1=0.9, beta2=0.9, epsilon=1e-8,
-                 weight_decay=0, projection_freq=10, projection_scale=0.1, 
-                 adaptive_threshold=0.01
-    
-    worse hyperparams (dev set score = 41.681):
-    lr=1e-3, beta1=0.9, beta2=0.999, epsilon=1e-8,
-                 weight_decay=0, projection_freq=10, projection_scale=0.1, 
-                 adaptive_threshold=0.01
 
-    WORSE hyperparams:
-    lr=3e-3, beta1=0.95, beta2=0.95, epsilon=1e-8,
-                 weight_decay=0.01, projection_freq=10, projection_scale=0.1, 
-                 adaptive_threshold=0.01
-    '''
-
-
-    def __init__(self, params, lr=2e-3, beta1=0.85, beta2=0.9, epsilon=1e-8,
-                 weight_decay=0, projection_freq=10, projection_scale=0.1, 
-                 adaptive_threshold=0.01):
+    def __init__(
+        self,
+        params,
+        lr: float = 2e-3,
+        betas: Tuple[float, float] = (0.85, 0.9),
+        eps: float = 1e-8,
+        weight_decay: float = 0,
+        preconditioning_frequency: int = 10,
+        use_weight_decay: bool = True,
+    ):
         if not 0.0 <= lr:
-            raise ValueError(f"Invalid learning rate: {lr}")
-        if not 0.0 <= epsilon:
-            raise ValueError(f"Invalid epsilon value: {epsilon}")
-        if not 0.0 <= beta1 < 1.0:
-            raise ValueError(f"Invalid beta1 parameter: {beta1}")
-        if not 0.0 <= beta2 < 1.0:
-            raise ValueError(f"Invalid beta2 parameter: {beta2}")
+            raise ValueError("Invalid learning rate: {}".format(lr))
+        if not 0.0 <= eps:
+            raise ValueError("Invalid epsilon value: {}".format(eps))
+        if not 0.0 <= betas[0] < 1.0:
+            raise ValueError("Invalid beta parameter at index 0: {}".format(betas[0]))
+        if not 0.0 <= betas[1] < 1.0:
+            raise ValueError("Invalid beta parameter at index 1: {}".format(betas[1]))
         if not 0.0 <= weight_decay:
-            raise ValueError(f"Invalid weight_decay value: {weight_decay}")
-        if not 0 < projection_freq:
-            raise ValueError(f"Invalid projection frequency: {projection_freq}")
-            
-        defaults = dict(lr=lr, beta1=beta1, beta2=beta2, epsilon=epsilon,
-                        weight_decay=weight_decay, projection_freq=projection_freq,
-                        projection_scale=projection_scale, 
-                        adaptive_threshold=adaptive_threshold)
+            raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
+        if not 1 <= preconditioning_frequency:
+            raise ValueError("Invalid preconditioning_frequency value: {}".format(preconditioning_frequency))
+
+        defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, preconditioning_frequency=preconditioning_frequency, use_weight_decay=use_weight_decay)
         super(SOAPV2, self).__init__(params, defaults)
-        
+
     def __setstate__(self, state):
         super(SOAPV2, self).__setstate__(state)
-    
+
+    @torch.no_grad()
     def step(self, closure=None):
-        """
-        Performs a single optimization step.
-        
-        Arguments:
-            closure (callable, optional): A closure that reevaluates the model
-                and returns the loss.
-        """
+        # Initialization adapted from adam
         loss = None
         if closure is not None:
-            loss = closure()
-            
-        for group in self.param_groups:
-            for p in group['params']:
-                if p.grad is None:
-                    continue
-                
-                grad = p.grad.data
-                if grad.is_sparse:
-                    raise RuntimeError('SOAP does not support sparse gradients')
-                    
-                state = self.state[p]
-                
-                # State initialization
-                if len(state) == 0:
-                    state['step'] = 0
-                    # Exponential moving average of gradient values
-                    state['exp_avg'] = torch.zeros_like(p.data)
-                    # Exponential moving average of squared gradient values
-                    state['exp_avg_sq'] = torch.zeros_like(p.data)
-                    # Previous parameter values for projection
-                    state['prev_params'] = torch.zeros_like(p.data)
-                    # Moving average for adaptive projection
-                    state['proj_moving_avg'] = torch.zeros_like(p.data)
-                    
-                exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
-                prev_params = state['prev_params']
-                proj_moving_avg = state['proj_moving_avg']
-                
-                beta1, beta2 = group['beta1'], group['beta2']
-                projection_freq = group['projection_freq']
-                projection_scale = group['projection_scale']
-                adaptive_threshold = group['adaptive_threshold']
-                
-                state['step'] += 1
-                step = state['step']
-                
-                if group['weight_decay'] != 0:
-                    grad = grad.add(p.data, alpha=group['weight_decay'])
-                    
-                # Update biased first moment estimate
-                exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
-                # Update biased second raw moment estimate
-                exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
-                
-                # Bias correction
-                bias_correction1 = 1 - beta1 ** step
-                bias_correction2 = 1 - beta2 ** step
-                
-                # Compute adaptive learning rate
-                step_size = group['lr'] * np.sqrt(bias_correction2) / bias_correction1
-                
-                # Update parameters using Adam-style update
-                denom = exp_avg_sq.sqrt().add_(group['epsilon'])
-                p.data.addcdiv_(exp_avg, denom, value=-step_size)
-                
-                # Store current parameters for comparison
-                param_diff = p.data - prev_params
-                prev_params.copy_(p.data)
-                
-                # Update projection moving average
-                proj_moving_avg.mul_(beta1).add_(param_diff, alpha=1 - beta1)
-                
-                # Apply projection step periodically
-                if step % projection_freq == 0:
-                    # Calculate adaptive projection based on gradient variance
-                    grad_var = exp_avg_sq / (1 - beta2**step) - (exp_avg / (1 - beta1**step))**2
-                    
-                    # Compute adaptive mask where variance exceeds threshold
-                    adaptive_mask = (grad_var > adaptive_threshold).float()
-                    
-                    # Apply projection in directions with high variance
-                    projection = projection_scale * proj_moving_avg * adaptive_mask
-                    p.data.add_(projection)
-                    
-        return loss
+            with torch.enable_grad():
+                loss = closure()
 
+        for group in self.param_groups:
+            params_with_grad = []
+            grads = []
+            exp_avgs = []
+            exp_avg_sqs = []
+            L_matrices = []
+            R_matrices = []
+
+            lr = group["lr"]
+            beta1, beta2 = group["betas"]
+            eps = group["eps"]
+            weight_decay = group["weight_decay"]
+            preconditioning_frequency = group["preconditioning_frequency"]
+            use_weight_decay = group["use_weight_decay"]
+
+            for p in group["params"]:
+                if p.grad is not None:
+                    params_with_grad.append(p)
+                    if p.grad.is_sparse:
+                        raise RuntimeError("SOAP does not support sparse gradients")
+                    grads.append(p.grad)
+
+                    state = self.state[p]
+                    # initialize states to 0 as needed
+                    if len(state) == 0:
+                        state["step"] = 0
+                        state["exp_avg"] = torch.zeros_like(p)
+                        state["exp_avg_sq"] = torch.zeros_like(p)
+                        state["L"] = torch.eye(p.shape[0]) if len(p.shape) > 1 else None
+                        state["R"] = torch.eye(p.shape[1]) if len(p.shape) > 1 else None
+                        state["L_eigvecs"] = torch.eye(p.shape[0]) if len(p.shape) > 1 else None
+                        state["R_eigvecs"] = torch.eye(p.shape[1]) if len(p.shape) > 1 else None
+
+                    exp_avgs.append(state["exp_avg"])
+                    exp_avg_sqs.append(state["exp_avg_sq"])
+                    L_matrices.append(state["L"])
+                    R_matrices.append(state["R"])
+
+            for param in params_with_grad:
+                state = self.state[param]
+                state["step"] += 1
+            
+            for i, param in enumerate(params_with_grad):
+                state = self.state[param]
+                grad = grads[i]
+                exp_avg = exp_avgs[i]
+                exp_avg_sq = exp_avg_sqs[i]
+                L = L_matrices[i]
+                R = R_matrices[i]
+                L_eigvecs = state["L_eigvecs"]
+                R_eigvecs = state["R_eigvecs"]
+
+                # decay weight as necessary
+                if weight_decay != 0:
+                    grad = grad.add(p, alpha=weight_decay)
+                
+                exp_avg.mul_(beta1).add_(grad, alpha= 1 - beta1)
+                exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value= 1 - beta2)
+
+                if state["step"] % preconditioning_frequency == 0 and L is not None and R is not None:
+                    L = (beta2 * L) + ((1 - beta2) * (grad @ grad.transpose(-1, -2)))
+                    R = (beta2 * R) + ((1 - beta2) * (grad.transpose(-1, -2) @ grad))
+                    state["L"] = L
+                    state["R"] = R
+                    _, L_eigvecs = torch.linalg.eigh(L)
+                    _, R_eigvecs = torch.linalg.eigh(R)
+                    state["L_eigvecs"] = L_eigvecs
+                    state["R_eigvecs"] = R_eigvecs
+                    
+                # Correct bias
+                bias_correction1 = 1.0 - beta1 ** state["step"]
+                bias_correction2 = 1.0 - beta2 ** state["step"]
+                
+                if L is not None and R is not None:
+                    # Rotate gradient
+                    exp_avg_rotated = L_eigvecs.transpose(-1, -2) @ exp_avg @ R_eigvecs
+                    exp_avg_sq_rotated = L_eigvecs.transpose(-1, -2) @ exp_avg_sq @ R_eigvecs
+                    denom_rotated = (exp_avg_sq_rotated.sqrt() / math.sqrt(bias_correction2)).add(eps)
+                    step_size_rotated = lr / bias_correction1
+                    
+                    p_rotated = L_eigvecs.transpose(-1, -2) @ param.data @ R_eigvecs
+                    if use_weight_decay:
+                        p_rotated.add_( -step_size_rotated * exp_avg_rotated / denom_rotated + weight_decay * p_rotated)
+                    else:
+                        p_rotated.add_(-step_size_rotated * exp_avg_rotated / denom_rotated)
+                    param.data = L_eigvecs @ p_rotated @ R_eigvecs.transpose(-1, -2)
+
+                else:
+                    # update if no L or R
+                    denom = (exp_avg_sq.sqrt() / math.sqrt(bias_correction2)).add(eps)
+                    param.data.add_(param.data, alpha=-lr * weight_decay)
+                    step_size = lr / bias_correction1
+                    param.data.addcdiv_(-step_size * exp_avg, denom)
+
+        return loss
 class SOAP(Optimizer):
     """
     Implements SOAP algorithm (https://arxiv.org/abs/2409.11321).
