@@ -14,6 +14,7 @@ trains and evaluates your ParaphraseGPT model and writes the required submission
 import argparse
 import random
 import torch
+import types
 
 import numpy as np
 import torch.nn.functional as F
@@ -21,6 +22,8 @@ import torch.nn.functional as F
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+
+from smart_optimizer import SMARTLoss
 
 from datasets import (
   ParaphraseDetectionDataset,
@@ -30,7 +33,10 @@ from datasets import (
 from evaluation import model_eval_paraphrase, model_test_paraphrase
 from models.gpt2 import GPT2Model
 
-from optimizer import AdamW
+from optimizer import AdamW, SOAPV2
+
+from peft import LoraConfig, get_peft_model
+from transformers import AutoModelForCausalLM
 
 TQDM_DISABLE = False
 
@@ -50,12 +56,24 @@ class ParaphraseGPT(nn.Module):
 
   def __init__(self, args):
     super().__init__()
-    self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
-    self.paraphrase_detection_head = nn.Linear(args.d, 2)  # Paraphrase detection has two outputs: 1 (yes) or 0 (no).
+    self.gpt = AutoModelForCausalLM.from_pretrained(args.model_size)
+        
+    # Apply LoRA
+    lora_config = LoraConfig(
+      task_type="CAUSAL_LM",
+      r=512,
+      lora_alpha=3875,
+      lora_dropout=0.1,
+      target_modules=["c_attn", "c_proj"]
+    )
 
-    # By default, fine-tune the full model.
-    for param in self.gpt.parameters():
-      param.requires_grad = True
+
+    self.gpt = get_peft_model(self.gpt, lora_config)
+    self.paraphrase_detection_head = nn.Linear(args.d, 2)  
+
+    for name, param in self.gpt.named_parameters():
+      if "lora" in name:
+        param.requires_grad = True
 
   def forward(self, input_ids, attention_mask):
     """
@@ -75,11 +93,9 @@ class ParaphraseGPT(nn.Module):
     input_ids = input_ids.to(device)
     attention_mask = attention_mask.to(device)
 
-    # GPT-2 embedding
-    output = self.gpt.forward(input_ids, attention_mask)
+    output = self.gpt(input_ids, attention_mask=attention_mask, output_hidden_states=True)
 
-    
-    logits = self.gpt.hidden_state_to_token(output['last_token'])
+    logits = output.logits[:, -1, :]
 
     return logits
 
