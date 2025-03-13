@@ -48,12 +48,12 @@ class SonnetGPT(nn.Module):
 
   def __init__(self, args):
     super().__init__()
-    self.gpt = AutoModelForCausalLM.from_pretrained("gpt2")
-    self.tokenizer = AutoTokenizer.from_pretrained("gpt2")
-    self.tokenizer.pad_token = self.tokenizer.eos_token
-    #self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
-    #self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+    #self.gpt = AutoModelForCausalLM.from_pretrained("gpt2")
+    #self.tokenizer = AutoTokenizer.from_pretrained("gpt2")
     #self.tokenizer.pad_token = self.tokenizer.eos_token
+    self.gpt = GPT2Model.from_pretrained(model=args.model_size, d=args.d, l=args.l, num_heads=args.num_heads)
+    self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+    self.tokenizer.pad_token = self.tokenizer.eos_token
 
     # By default, fine-tune the full model. TODO: this is maybe not idea.
     for param in self.gpt.parameters():
@@ -70,12 +70,11 @@ class SonnetGPT(nn.Module):
     input_ids = input_ids.to(device)
     attention_mask = attention_mask.to(device)
 
-    #output = self.gpt.forward(input_ids, attention_mask)
-    output = self.gpt.forward(input_ids)
+    output = self.gpt.forward(input_ids, attention_mask)
     
-    #logits = self.gpt.hidden_state_to_token(output['last_hidden_state'])
+    logits = self.gpt.hidden_state_to_token(output['last_hidden_state'])
 
-    return output
+    return logits
 
 
   def get_device(self):
@@ -199,7 +198,7 @@ def train(args, last_epoch):
     model.eval()
     count = 1
     for batch in held_out_sonnet_dataset:
-      print(f'Printing sonnet {count} out of {len(held_out_sonnet_dataset)}')
+      print(f'Printing sonnet {count} out of {len(held_out_sonnet_dataset)} for epoch {last_epoch}')
       count += 1
       encoding = model.tokenizer(batch[1], return_tensors='pt', padding=True, truncation=True).to(device)
       output = model.generate(encoding['input_ids'], temperature=args.temperature, top_p=args.top_p)
@@ -212,10 +211,12 @@ def train(args, last_epoch):
       break
     prevTrainLoss = train_loss
     save_model(model, optimizer, args, f'{epoch}_{args.filepath}')
+  return last_epoch
 
 
 @torch.no_grad()
 def generate_submission_sonnets(args, last_epoch):
+  print(f'Generating submission sonnets based on model from epoch {last_epoch}')
   device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
   #saved = torch.load(f'{args.epochs-1}_{args.filepath}', weights_only=False)
   saved = torch.load(f'{last_epoch}_{args.filepath}', weights_only=False)
@@ -295,5 +296,5 @@ if __name__ == "__main__":
   args.filepath = f'{args.epochs}-{args.lr}-sonnet.pt'  # Save path.
   seed_everything(args.seed)  # Fix the seed for reproducibility.
   last_epoch = 0
-  train(args, last_epoch)
-  generate_submission_sonnets(args, last_epoch)
+  last_epoch = train(args, last_epoch)
+  generate_submission_sonnets(args, 9)
