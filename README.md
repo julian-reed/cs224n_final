@@ -1,3 +1,7 @@
+![image](https://github.com/user-attachments/assets/c0180cd0-6a4c-4136-bc79-57eb99213f68)
+
+
+
 # CS 224N Default Final Project: Building and Optimizing GPT-2
 
 This is the default final project for the Stanford CS 224N class. Please refer to the project handout on the course
